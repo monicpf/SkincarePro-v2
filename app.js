@@ -161,7 +161,7 @@
     if (S.screen === 'result') {
       if (el.classList && el.classList.contains('dd-row')) {
         if (el.dataset.mode === 'focus' && S.rs !== 'W') return true;   // focus needs a selected concern
-        S.mode = el.dataset.mode; advance(2); apply(); return true;   // dropdown stays open
+        S.mode = el.dataset.mode; advance(2); modeAt = Date.now(); apply(); setTimeout(updateHint, 3050); return true;   // dropdown stays open
       }
       if (isGlasses(name)) { S.dd = !S.dd; apply(); return true; }
       if (name === 'btn_all_concerns') {
@@ -218,7 +218,7 @@
       case 0: return S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null;
       case 1: return S.rs === 'X' ? firstVis(sc, '.wr-x [data-name="pill_Wrinkles"]') : (S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null);
       case 2: return S.dd ? firstVis(sc, '.dd-row:not(.sel):not([data-mode="focus"]), .result-frame.s-W .dd-row[data-mode="focus"]:not(.sel)') : firstVis(sc, '[data-name^="btn_skincarepro_compare_s"], [data-name^="btn_skincarepro_previewmodes"]');
-      case 3: return !S.dd ? firstVis(sc, '[data-name="btn_view_report"]') : null;
+      case 3: return (Date.now() - modeAt >= 3000) ? firstVis(sc, '[data-name="btn_view_report"]') : null;
       case 4: return firstVis(sc, '[data-name="concern_card_Redness"]');
       case 5: return firstVis(sc, '[data-name^="btn_matching_products"]');
       case 6: return firstVis(sc, '.fixedlayer [data-name="tab_Get Report"]');
@@ -237,7 +237,7 @@
     }
     return null;
   }
-  let hintStep = -1;
+  let hintStep = -1, modeAt = 0;
 
   // bring an off-screen hint target into view: lists right away, pages only if the user
   // hasn't started scrolling by themselves within 2 s
@@ -260,7 +260,7 @@
       return;
     }
     const sr = t.closest('.scroller');
-    if (!sr) return;
+    if (!sr || S.screen === 'report') return;          // report: the user scrolls by themselves
     userScrolled = false;
     revealTimer = setTimeout(() => {
       if (userScrolled || revealTag !== tag || !t.isConnected) return;
@@ -273,13 +273,17 @@
   let scrolling = false, scrollTimer = null;
   function updateHint() {
     if (!cur) return;
-    for (const cv in canv) if (cv !== cur) canv[cv].querySelector('.hint-layer').classList.remove('hint-on');
+    for (const cv in canv) if (cv !== cur) { const l = canv[cv].querySelector('.hint-layer'); if (l) l.classList.remove('hint-on'); }
     const c = canv[cur], layer = c.querySelector('.hint-layer'), dot = layer.querySelector('.hint');
     const t = hintTarget(c);
     if (t) scheduleReveal(t, c);
     if (!t || scrolling) { layer.classList.remove('hint-on'); return; }
     const s = c._s || 1, cr = c.getBoundingClientRect(), r = t.getBoundingClientRect();
     const x = (r.left - cr.left + r.width / 2) / s, y = (r.top - cr.top + r.height / 2) / s;
+    if (y < 0 || y > DIM[cur][1]) { layer.classList.remove('hint-on'); return; }
+    const sc = t.closest('.screen'), fl = sc && sc.querySelector(':scope > .fixedlayer');
+    const home = (fl && !t.closest('.fixedlayer')) ? sc : c;     // inside the page: below the fixed bars
+    if (layer.parentElement !== home) { if (home === sc) sc.insertBefore(layer, fl); else c.appendChild(layer); }
     const tag = hintStep + ':' + S.screen + ':' + S.dd;
     if (!layer.classList.contains('hint-on') || layer.dataset.tag !== tag) {
       dot.classList.add('jump');                     // appear in place, no sliding across the screen
