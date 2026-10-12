@@ -148,7 +148,13 @@
   function handle(name, el) {
     if (name === 'btn_take_back') { stopTake(); S.screen = 'result'; apply(true); return true; }
     if (S.screen === 'take') return true;
-    if (isBack(name)) { startTake(); return true; }
+    if (S.screen === 'result' && (isBack(name) || isHome(name))) return true;   // disabled on the result page
+    if (isBack(name)) {
+      // Report / concern detail / Recommendation go back to the analysis result; elsewhere back restarts from the photo
+      if (/^(report|detail|rec)$/.test(S.screen)) { S.screen = 'result'; S.dd = false; apply(true); }
+      else startTake();
+      return true;
+    }
     if (isHome(name)) { startTake(); return true; }
     if (S.screen === 'result') {
       if (el.classList && el.classList.contains('dd-row')) {
