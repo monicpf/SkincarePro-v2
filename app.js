@@ -260,7 +260,7 @@
       return;
     }
     const sr = t.closest('.scroller');
-    if (!sr || S.screen === 'report') return;          // report: the user scrolls by themselves
+    if (!sr || S.screen === 'report' || S.screen === 'detail') return;   // the user scrolls by themselves
     userScrolled = false;
     revealTimer = setTimeout(() => {
       if (userScrolled || revealTag !== tag || !t.isConnected) return;
