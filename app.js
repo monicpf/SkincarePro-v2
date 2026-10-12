@@ -6,7 +6,7 @@
 
   // ---------- global state (shared by all canvases, survives rotation) ----------
   // rs: result sub-state  C = collapsed, X = all concerns, W = wrinkles detail
-  const init = () => ({ screen: 'result', rs: 'C', shelf: true, mode: 'analysis', dd: false, rec: 'products', filter: 'all', step: 0 });
+  const init = () => ({ screen: 'result', rs: 'C', shelf: true, mode: 'analysis', dd: false, rec: 'products', filter: 'all', done: [false, false, false, false, false, false, false, false] });
   let S = init();
   let cur = null;
 
@@ -33,8 +33,8 @@
     if (cv !== cur) {
       if (cur) canv[cur].classList.remove('active');
       cur = cv; canv[cv].classList.add('active');
-      requestAnimationFrame(applyWrinkleScroll);
     }
+    measureShelf(canv[cv]);
     const [W, H] = DIM[cv];
     const vw = window.innerWidth, vh = window.innerHeight;
     const s = Math.min(vw / W, vh / H);
@@ -42,6 +42,15 @@
     c._s = s;
     c.style.transform = `translate(${(vw - W * s) / 2}px, ${(vh - H * s) / 2}px) scale(${s})`;
     updateHint();
+  }
+
+  // height difference between the open and collapsed product shelf drives the concerns column / panel slide
+  function measureShelf(c) {
+    const rf = c.querySelector('.result-frame'); if (!rf) return;
+    const o = rf.querySelector('.shelf-o'), k = rf.querySelector('.shelf-c');
+    if (!o || !k || !o.offsetHeight) return;
+    rf.style.setProperty('--shelf-d', (o.offsetHeight - k.offsetHeight) + 'px');
+    rf.querySelectorAll('.wr-sub').forEach(w => { if (S.rs === 'W') w.style.height = w.scrollHeight + 'px'; });
   }
 
   // ---------- render state into every canvas ----------
@@ -58,7 +67,8 @@
       const rf = c.querySelector('.result-frame');
       if (rf) {
         ['C', 'X', 'W'].forEach(s => rf.classList.toggle('s-' + s, S.rs === s));
-        rf.querySelectorAll('.st').forEach(g => g.classList.toggle('cur', g.classList.contains('st-' + S.rs)));
+        ['analysis', 'focus', 'original'].forEach(m => rf.classList.toggle('m-' + m, S.mode === m));
+        rf.querySelectorAll('.wr-sub').forEach(w => { w.style.height = S.rs === 'W' ? w.scrollHeight + 'px' : '0px'; });
         rf.classList.toggle('shelf-open', S.shelf);
         rf.querySelectorAll('.shelf').forEach(g => g.classList.toggle('cur', g.classList.contains(S.shelf ? 'shelf-o' : 'shelf-c')));
         rf.classList.toggle('dd-open', S.dd);
@@ -75,16 +85,15 @@
     requestAnimationFrame(updateHint);
     setTimeout(updateHint, 480);   // again once transitions have settled
   }
-  // the wrinkles list opens scrolled like the design; hidden canvases get it when they become active
-  let wPending = {};
-  function scrollWrinkles() {
-    wPending = { p: true, l: true, m: true };
-    applyWrinkleScroll();
-  }
-  function applyWrinkleScroll() {
-    if (!cur || !wPending[cur] || S.rs !== 'W') return;
-    wPending[cur] = false;
-    canv[cur].querySelectorAll('.st-W [data-scroll]').forEach(el => { el.scrollTop = parseFloat(el.dataset.scroll) || 0; });
+  // after the wrinkle rows unfold, keep them in view
+  function revealWrinkles() {
+    setTimeout(() => {
+      const c = canv[cur], list = c.querySelector('.clist'), row = c.querySelector('.wr-row');
+      if (!list || !row) return;
+      const s = c._s || 1, lr = list.getBoundingClientRect(), rr = row.getBoundingClientRect();
+      const top = list.scrollTop + (rr.top - lr.top) / s - 20;
+      smoothTo(list, Math.max(0, top));
+    }, 80);
   }
 
   // ---------- navigation ----------
@@ -99,7 +108,7 @@
     if (S.screen === 'result') { const st = S.step; S = init(); S.step = st; apply(true); return; }
     S.screen = 'result'; S.dd = false; apply(true);
   }
-  const advance = n => { if (S.step === n) S.step = n + 1; };
+  const advance = n => { S.done[n] = true; };
 
   // ---------- take photo + analysis ----------
   let timers = [];
@@ -140,7 +149,7 @@
     if (name === 'btn_take_back') { stopTake(); S.screen = 'result'; apply(true); return true; }
     if (S.screen === 'take') return true;
     if (isBack(name)) { startTake(); return true; }
-    if (isHome(name)) { home(); return true; }
+    if (isHome(name)) { startTake(); return true; }
     if (S.screen === 'result') {
       if (el.classList && el.classList.contains('dd-row')) {
         S.mode = el.dataset.mode; advance(2); apply(); return true;   // dropdown stays open
@@ -148,16 +157,13 @@
       if (isGlasses(name)) { S.dd = !S.dd; apply(); return true; }
       if (name === 'btn_all_concerns') {
         if (S.rs === 'C') { S.rs = 'X'; advance(0); } else S.rs = 'C';
+        if (S.rs === 'X') canv[cur].querySelectorAll('.clist').forEach(l => { l.scrollTop = 0; });
         S.dd = false; apply(); return true;
       }
       if (name === 'handelr') { S.shelf = !S.shelf; apply(); return true; }
-      if (S.rs === 'X' && (name === 'pill_Wrinkles' || name === 'wrinkles+' ||
-          (/^btn_skincarepro_expand_plus/.test(name) && el.closest('[data-name="wrinkles+"]')))) {
-        S.rs = 'W'; S.shelf = false; advance(1); apply(); requestAnimationFrame(scrollWrinkles); return true;
-      }
-      if (S.rs === 'W' && (/^btn_skincarepro_expand_minus/.test(name) ||
-          (name === 'pill_Wrinkles' && el.closest('[data-name="wrinkles+"]')))) {
-        S.rs = 'X'; S.shelf = true; apply(); return true;
+      if (el.closest('.wr-row')) {
+        if (S.rs === 'X') { S.rs = 'W'; advance(1); apply(); revealWrinkles(); return true; }
+        if (S.rs === 'W') { S.rs = 'X'; apply(); return true; }
       }
       if (name === 'btn_view_report') { advance(3); go('report'); return true; }
       if (name === 'btn_retake') { startTake(); return true; }
@@ -193,29 +199,36 @@
 
   // ---------- guided hints ----------
   const visible = el => {
-    if (!el || el.closest('.st:not(.cur), .shelf:not(.cur)')) return false;
+    if (!el || el.closest('.shelf:not(.cur), .wr-row > :not(.wr-x):not(.wr-w)')) return false;
     const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
   };
   const firstVis = (root, sel) => [...root.querySelectorAll(sel)].find(visible) || null;
+  const STEP_SCREEN = [/^result$/, /^result$/, /^result$/, /^result$/, /^report$/, /^detail$/, /^(recAll|recRed|routines|treatments)$/, /^share$/];
+  function stepTarget(i, sc) {
+    switch (i) {
+      case 0: return S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null;
+      case 1: return S.rs === 'X' ? firstVis(sc, '.wr-x [data-name="pill_Wrinkles"]') : (S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null);
+      case 2: return S.dd ? firstVis(sc, '.dd-row:not(.sel)') : firstVis(sc, '[data-name^="btn_skincarepro_compare_s"], [data-name^="btn_skincarepro_previewmodes"]');
+      case 3: return !S.dd ? firstVis(sc, '[data-name="btn_view_report"]') : null;
+      case 4: return firstVis(sc, '[data-name="concern_card_Redness"]');
+      case 5: return firstVis(sc, '[data-name^="btn_matching_products"]');
+      case 6: return firstVis(sc, '.fixedlayer [data-name="tab_Get Report"]');
+      case 7: return firstVis(sc, '.fixedlayer [data-name^="btn_skincarepro_back"]');
+    }
+  }
+  // each page points at its own next step, whatever was skipped elsewhere
   function hintTarget(c) {
     const sc = c.querySelector(':scope > .screen.active');
     if (!sc) return null;
     const scr = sc.dataset.screen;
-    switch (S.step) {
-      case 0: return scr === 'result' && S.rs === 'C' ? firstVis(sc, '.st-C [data-name="btn_all_concerns"]') : null;
-      case 1: return scr === 'result' && S.rs === 'X' ? firstVis(sc, '.st-X [data-name="pill_Wrinkles"]') : null;
-      case 2:
-        if (scr !== 'result') return null;
-        if (S.dd) return firstVis(sc, '.dd-row:not(.sel)');
-        return firstVis(sc, '[data-name^="btn_skincarepro_compare_s"], [data-name^="btn_skincarepro_previewmodes"]');
-      case 3: return scr === 'result' && !S.dd ? firstVis(sc, '[data-name="btn_view_report"]') : null;
-      case 4: return scr === 'report' ? firstVis(sc, '[data-name="concern_card_Redness"]') : null;
-      case 5: return scr === 'detail' ? firstVis(sc, '[data-name^="btn_matching_products"]') : null;
-      case 6: return /^(recAll|recRed|routines|treatments)$/.test(scr) ? firstVis(sc, '.fixedlayer [data-name="tab_Get Report"]') : null;
-      case 7: return scr === 'share' ? firstVis(sc, '.fixedlayer [data-name^="btn_skincarepro_back"]') : null;
+    for (let i = 0; i < 8; i++) {
+      if (S.done[i] || !STEP_SCREEN[i].test(scr)) continue;
+      const t = stepTarget(i, sc);
+      if (t) { hintStep = i; return t; }
     }
     return null;
   }
+  let hintStep = -1;
 
   // bring an off-screen hint target into view: lists right away, pages only if the user
   // hasn't started scrolling by themselves within 2 s
@@ -226,7 +239,7 @@
     else box.scrollTop = top;
   }
   function scheduleReveal(t, c) {
-    const tag = S.step + ':' + S.screen + ':' + S.rs + ':' + cur;
+    const tag = hintStep + ':' + S.screen + ':' + S.rs + ':' + cur;
     if (revealTag === tag) return;
     revealTag = tag;
     clearTimeout(revealTimer);
@@ -258,7 +271,7 @@
     if (!t || scrolling) { layer.classList.remove('hint-on'); return; }
     const s = c._s || 1, cr = c.getBoundingClientRect(), r = t.getBoundingClientRect();
     const x = (r.left - cr.left + r.width / 2) / s, y = (r.top - cr.top + r.height / 2) / s;
-    const tag = S.step + ':' + S.screen + ':' + S.dd;
+    const tag = hintStep + ':' + S.screen + ':' + S.dd;
     if (!layer.classList.contains('hint-on') || layer.dataset.tag !== tag) {
       dot.classList.add('jump');                     // appear in place, no sliding across the screen
       dot.style.left = x + 'px'; dot.style.top = y + 'px';
