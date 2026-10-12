@@ -58,7 +58,9 @@
       const rf = c.querySelector('.result-frame');
       if (rf) {
         ['C', 'X', 'W'].forEach(s => rf.classList.toggle('s-' + s, S.rs === s));
+        rf.querySelectorAll('.st').forEach(g => g.classList.toggle('cur', g.classList.contains('st-' + S.rs)));
         rf.classList.toggle('shelf-open', S.shelf);
+        rf.querySelectorAll('.shelf').forEach(g => g.classList.toggle('cur', g.classList.contains(S.shelf ? 'shelf-o' : 'shelf-c')));
         rf.classList.toggle('dd-open', S.dd);
         const pk = photoKey(cv);
         rf.querySelectorAll('.ph').forEach(im => im.classList.toggle('on', im.classList.contains('ph-' + pk)));
@@ -71,6 +73,7 @@
       }
     }
     requestAnimationFrame(updateHint);
+    setTimeout(updateHint, 480);   // again once transitions have settled
   }
   // the wrinkles list opens scrolled like the design; hidden canvases get it when they become active
   let wPending = {};
@@ -123,8 +126,9 @@
       play('.scan-rings', 'scan_rings.png');
     });
     later(3300 + 1950, () => { hide('.scan-rings'); play('.scan-dots', 'scan_dots.png'); });
-    later(3300 + 1950 + 1850, () => { hide('.scan-dots'); each('.scan-done', d => d.classList.add('on')); play('.scan-check', 'scan_check.png'); });
-    later(3300 + 1950 + 1850 + 1900, () => { stopTake(); S = init(); apply(true); });
+    later(3300 + 1950 + 1850, () => { hide('.scan-dots'); play('.scan-check', 'scan_check.png'); each('.scan-done', d => d.classList.add('on')); });
+    // check mark plays once (1.1s) and holds its last frame, then straight on to the result
+    later(3300 + 1950 + 1850 + 1350, () => { stopTake(); S = init(); apply(true); });
   }
 
   // ---------- interactions ----------
@@ -188,7 +192,10 @@
   });
 
   // ---------- guided hints ----------
-  const visible = el => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+  const visible = el => {
+    if (!el || el.closest('.st:not(.cur), .shelf:not(.cur)')) return false;
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  };
   const firstVis = (root, sel) => [...root.querySelectorAll(sel)].find(visible) || null;
   function hintTarget(c) {
     const sc = c.querySelector(':scope > .screen.active');
@@ -209,40 +216,69 @@
     }
     return null;
   }
-  // keep a hint target that lives inside a scrolling list in view
-  let revealed = '';
-  function reveal(t, s) {
-    const box = t.closest('.list-scroll');
-    if (!box) return;
-    const br = box.getBoundingClientRect(), r = t.getBoundingClientRect();
-    if (r.top >= br.top && r.bottom <= br.bottom - br.height * 0.12) return;
-    box.scrollTop += (r.top - br.top - br.height * 0.35) / s;
+
+  // bring an off-screen hint target into view: lists right away, pages only if the user
+  // hasn't started scrolling by themselves within 2 s
+  let revealTag = '', revealTimer = null, userScrolled = false, autoScrollUntil = 0;
+  function smoothTo(box, top) {
+    autoScrollUntil = Date.now() + 900;
+    if ('scrollBehavior' in document.documentElement.style) box.scrollTo({ top, behavior: 'smooth' });
+    else box.scrollTop = top;
   }
-  function updateHint() {
-    for (const cv in canv) canv[cv].querySelector('.hint-layer').classList.remove('hint-on');
-    if (!cur) return;
-    const c = canv[cur];
-    const t = hintTarget(c);
-    if (!t) return;
-    reveal(t, c._s || 1);
-    const tag = S.step + ':' + S.screen;
-    if (revealed !== tag) {   // first time a hint appears on a page: bring it into view once
-      revealed = tag;
-      const sr = t.closest('.scroller');
-      if (sr) {
-        const cr0 = c.getBoundingClientRect(), r0 = t.getBoundingClientRect(), s0 = c._s || 1;
-        const y = (r0.top - cr0.top) / s0, h = DIM[cur][1];
-        if (y < h * 0.12 || y > h * 0.78) sr.scrollTop += y - h * 0.45;
-      }
+  function scheduleReveal(t, c) {
+    const tag = S.step + ':' + S.screen + ':' + S.rs + ':' + cur;
+    if (revealTag === tag) return;
+    revealTag = tag;
+    clearTimeout(revealTimer);
+    const s = c._s || 1;
+    const list = t.closest('.list-scroll');
+    if (list) {
+      const br = list.getBoundingClientRect(), r = t.getBoundingClientRect();
+      if (r.top < br.top || r.bottom > br.bottom - br.height * 0.12) smoothTo(list, list.scrollTop + (r.top - br.top - br.height * 0.35) / s);
+      return;
     }
+    const sr = t.closest('.scroller');
+    if (!sr) return;
+    userScrolled = false;
+    revealTimer = setTimeout(() => {
+      if (userScrolled || revealTag !== tag || !t.isConnected) return;
+      const cr = c.getBoundingClientRect(), r = t.getBoundingClientRect();
+      const y = (r.top - cr.top) / s, h = DIM[cur][1];
+      if (y < h * 0.12 || y > h * 0.75) smoothTo(sr, sr.scrollTop + y - h * 0.45);
+    }, 2000);
+  }
+
+  let scrolling = false, scrollTimer = null;
+  function updateHint() {
+    if (!cur) return;
+    for (const cv in canv) if (cv !== cur) canv[cv].querySelector('.hint-layer').classList.remove('hint-on');
+    const c = canv[cur], layer = c.querySelector('.hint-layer'), dot = layer.querySelector('.hint');
+    const t = hintTarget(c);
+    if (t) scheduleReveal(t, c);
+    if (!t || scrolling) { layer.classList.remove('hint-on'); return; }
     const s = c._s || 1, cr = c.getBoundingClientRect(), r = t.getBoundingClientRect();
-    const layer = c.querySelector('.hint-layer'), dot = layer.querySelector('.hint');
-    dot.style.left = ((r.left - cr.left + r.width / 2) / s) + 'px';
-    dot.style.top = ((r.top - cr.top + r.height / 2) / s) + 'px';
+    const x = (r.left - cr.left + r.width / 2) / s, y = (r.top - cr.top + r.height / 2) / s;
+    const tag = S.step + ':' + S.screen + ':' + S.dd;
+    if (!layer.classList.contains('hint-on') || layer.dataset.tag !== tag) {
+      dot.classList.add('jump');                     // appear in place, no sliding across the screen
+      dot.style.left = x + 'px'; dot.style.top = y + 'px';
+      void dot.offsetWidth;
+      dot.classList.remove('jump');
+    } else if (Math.abs(parseFloat(dot.style.left) - x) > .5 || Math.abs(parseFloat(dot.style.top) - y) > .5) {
+      dot.style.left = x + 'px'; dot.style.top = y + 'px';
+    }
+    layer.dataset.tag = tag;
     layer.classList.add('hint-on');
   }
 
-  document.addEventListener('scroll', () => requestAnimationFrame(updateHint), true);
+  // hide the hint while anything scrolls; bring it back once scrolling settles
+  document.addEventListener('scroll', () => {
+    if (Date.now() > autoScrollUntil) userScrolled = true;
+    if (!scrolling) { scrolling = true; updateHint(); }
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => { scrolling = false; updateHint(); }, 260);
+  }, true);
+  setInterval(() => { if (!scrolling) updateHint(); }, 700);   // safety net (fonts, late layout, rotation)
   window.addEventListener('resize', layout);
   window.addEventListener('orientationchange', () => setTimeout(layout, 120));
   if (window.ResizeObserver) new ResizeObserver(layout).observe(document.documentElement);
