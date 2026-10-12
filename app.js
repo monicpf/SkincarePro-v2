@@ -74,6 +74,8 @@
         rf.classList.toggle('dd-open', S.dd);
         const pk = photoKey(cv);
         rf.querySelectorAll('.ph').forEach(im => im.classList.toggle('on', im.classList.contains('ph-' + pk)));
+        if (S.mode === 'focus' && S.rs !== 'W') S.mode = 'analysis';
+        rf.classList.toggle('no-focus', S.rs !== 'W');
         rf.querySelectorAll('.dd-row').forEach(row => {
           const sel = row.dataset.mode === S.mode;
           row.classList.toggle('sel', sel);
@@ -158,6 +160,7 @@
     if (isHome(name)) { startTake(); return true; }
     if (S.screen === 'result') {
       if (el.classList && el.classList.contains('dd-row')) {
+        if (el.dataset.mode === 'focus' && S.rs !== 'W') return true;   // focus needs a selected concern
         S.mode = el.dataset.mode; advance(2); apply(); return true;   // dropdown stays open
       }
       if (isGlasses(name)) { S.dd = !S.dd; apply(); return true; }
@@ -214,7 +217,7 @@
     switch (i) {
       case 0: return S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null;
       case 1: return S.rs === 'X' ? firstVis(sc, '.wr-x [data-name="pill_Wrinkles"]') : (S.rs === 'C' ? firstVis(sc, '.ccol [data-name="btn_all_concerns"]') : null);
-      case 2: return S.dd ? firstVis(sc, '.dd-row:not(.sel)') : firstVis(sc, '[data-name^="btn_skincarepro_compare_s"], [data-name^="btn_skincarepro_previewmodes"]');
+      case 2: return S.dd ? firstVis(sc, '.dd-row:not(.sel):not([data-mode="focus"]), .result-frame.s-W .dd-row[data-mode="focus"]:not(.sel)') : firstVis(sc, '[data-name^="btn_skincarepro_compare_s"], [data-name^="btn_skincarepro_previewmodes"]');
       case 3: return !S.dd ? firstVis(sc, '[data-name="btn_view_report"]') : null;
       case 4: return firstVis(sc, '[data-name="concern_card_Redness"]');
       case 5: return firstVis(sc, '[data-name^="btn_matching_products"]');
