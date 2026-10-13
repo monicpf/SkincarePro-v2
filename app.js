@@ -55,6 +55,7 @@
 
   // ---------- render state into every canvas ----------
   function apply(resetScroll) {
+    setTimeout(() => fadeAll(), 560);
     const key = screenKey();
     for (const cv in canv) {
       const c = canv[cv];
@@ -298,13 +299,20 @@
   }
 
   // hide the hint while anything scrolls; bring it back once scrolling settles
-  document.addEventListener('scroll', () => {
+  // concerns list fade mask: top once scrolled, bottom while more content is below
+  function syncFade(l) {
+    l.classList.toggle('fade-t', l.scrollTop > 2);
+    l.classList.toggle('fade-b', l.scrollTop + l.clientHeight < l.scrollHeight - 2);
+  }
+  const fadeAll = () => document.querySelectorAll('.clist').forEach(syncFade);
+  document.addEventListener('scroll', e => {
+    if (e.target.classList && e.target.classList.contains('clist')) syncFade(e.target);
     if (Date.now() > autoScrollUntil) userScrolled = true;
     if (!scrolling) { scrolling = true; updateHint(); }
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => { scrolling = false; updateHint(); }, 260);
   }, true);
-  setInterval(() => { if (!scrolling) updateHint(); }, 700);   // safety net (fonts, late layout, rotation)
+  setInterval(() => { fadeAll(); if (!scrolling) updateHint(); }, 700);   // safety net (fonts, late layout, rotation)
   window.addEventListener('resize', layout);
   window.addEventListener('orientationchange', () => setTimeout(layout, 120));
   if (window.ResizeObserver) new ResizeObserver(layout).observe(document.documentElement);
