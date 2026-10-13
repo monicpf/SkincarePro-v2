@@ -6,7 +6,7 @@
 
   // ---------- global state (shared by all canvases, survives rotation) ----------
   // rs: result sub-state  C = collapsed, X = all concerns, W = wrinkles detail
-  const init = () => ({ screen: 'result', rs: 'C', shelf: true, mode: 'analysis', dd: false, rec: 'products', filter: 'all', done: [false, false, false, false, false, false, false, false] });
+  const init = () => ({ screen: 'result', rs: 'C', shelf: true, mode: 'analysis', dd: false, rec: 'products', filter: 'all', fm: false, done: [false, false, false, false, false, false, false, false] });
   let S = init();
   let cur = null;
 
@@ -54,7 +54,15 @@
   }
 
   // ---------- render state into every canvas ----------
+  // concern detail photo: Analysis / Focus Map toggle
+  function syncFm() {
+    document.querySelectorAll('.det-photo').forEach(ph => {
+      ph.querySelector('.det-ov').classList.toggle('fm-on', S.fm);
+      ph.querySelectorAll('.vt-opt').forEach(o => o.classList.toggle('vt-on', (o.dataset.name === 'opt_Focus') === S.fm));
+    });
+  }
   function apply(resetScroll) {
+    syncFm();
     setTimeout(() => fadeAll(), 560);
     const key = screenKey();
     for (const cv in canv) {
@@ -104,6 +112,7 @@
     S.screen = screen;
     if (opts.rec) S.rec = opts.rec;
     if (opts.filter) S.filter = opts.filter;
+    if (screen === 'detail') S.fm = false;
     S.dd = false;
     apply(true);
   }
@@ -180,6 +189,7 @@
       if (/^tab_(Products|Routines|Treatments)/.test(name)) return true;
       return false;
     }
+    if (name === 'opt_Analysis' || name === 'opt_Focus') { S.fm = name === 'opt_Focus'; syncFm(); return true; }
     if (name === 'concern_card_Redness') { advance(4); go('detail'); return true; }
     if (/^btn_matching_products/.test(name)) { advance(5); go('rec', { rec: 'products', filter: 'redness' }); return true; }
     if (name === 'tab_Report') { if (S.screen !== 'report') go('report'); return true; }
